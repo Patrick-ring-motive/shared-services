@@ -158,6 +158,7 @@ class SharedServices {
     this._targetOrigin = options.targetOrigin || new URL(iframeUrl).origin;
     this._iframe       = null;
     this._readyResolve = null;
+    this._generateId   = options.generateId || null;
 
     /**
      * All in-flight requests, keyed by crypto.randomUUID().
@@ -242,7 +243,14 @@ class SharedServices {
 
   _send(service, method, args) {
     return this.ready.then(() => new Promise((resolve, reject) => {
-      const id = crypto.randomUUID();
+      let id;
+      if (this._generateId) {
+        id = this._generateId();
+      } else if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        id = crypto.randomUUID();
+      } else {
+        id = Math.random().toString(36).slice(2);
+      }
       this.pending.set(id, { resolve, reject });
       this._iframe.contentWindow.postMessage(
         { __ss: true, id, service, method, args },
