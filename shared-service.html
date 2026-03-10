@@ -41,7 +41,10 @@
   let seq = 0;
 
   function uid(prefix) {
-    return prefix + '_' + (++seq) + '_' + crypto.randomUUID().slice(0, 8);
+    const rand = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2);
+    return prefix + '_' + (++seq) + '_' + rand;
   }
 
   /* ── postMessage helpers ──────────────────────────────────────── */
@@ -366,7 +369,7 @@
         });
         channel.addEventListener('message', function (evt) {
           var e = registry.get(channelId);
-          if (e) notifyClient(e, channelId, 'broadcastChannel', 'message', { data: evt.data });
+          if (e) notifyClient(e, channelId, 'broadcastChannel', 'message', evt.data);
         });
         channel.addEventListener('messageerror', function () {
           var e = registry.get(channelId);
