@@ -844,7 +844,7 @@ describe('destroy', () => {
     expect(ss.pending.size).toBe(1);
 
     ss.destroy();
-    await expect(p).rejects.toThrow('sharedServices destroyed');
+    await expect(p).rejects.toThrow('SharedServices destroyed');
   });
 
   test('clears the pending map', () => {
