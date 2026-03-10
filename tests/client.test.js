@@ -4,12 +4,12 @@
  * tests/client.test.js
  * Unit tests for client.js.
  *
- * Strategy: mock the DOM so SharedServices can be instantiated in Node/jsdom,
+ * Strategy: mock the DOM so sharedServices can be instantiated in Node/jsdom,
  * then simulate the postMessage round-trip by calling ss._onMessage() directly
  * with synthetic message events.
  */
 
-const SharedServices = require('../client.js');
+const sharedServices = require('../client.js');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared mock state (reset between tests)
@@ -46,9 +46,9 @@ afterEach(() => {
 const IFRAME_URL = 'https://user.github.io/repo/shared-services.html';
 const ORIGIN     = 'https://user.github.io';
 
-/** Create a SharedServices instance and immediately signal it as ready. */
+/** Create a sharedServices instance and immediately signal it as ready. */
 function makeSS(url = IFRAME_URL, opts = {}) {
-  const ss = new SharedServices(url, {
+  const ss = new sharedServices(url, {
     targetOrigin: ORIGIN,
     generateId: () => `test-uuid-${++uuidSeq}`,
     ...opts,
@@ -79,26 +79,26 @@ function respondError(ss, id, name, message) {
 
 describe('constructor', () => {
   test('creates a hidden iframe and appends it to body', () => {
-    const ss = new SharedServices(IFRAME_URL);
+    const ss = new sharedServices(IFRAME_URL);
     expect(ss).toBeDefined();
     expect(document.createElement).toHaveBeenCalledWith('iframe');
     expect(document.body.appendChild).toHaveBeenCalledWith(mockIframe);
   });
 
   test('sets sandbox and aria-hidden attributes on the iframe', () => {
-    const ss = new SharedServices(IFRAME_URL);
+    const ss = new sharedServices(IFRAME_URL);
     expect(ss).toBeDefined();
     expect(mockIframe.setAttribute).toHaveBeenCalledWith('sandbox', 'allow-scripts allow-same-origin');
     expect(mockIframe.setAttribute).toHaveBeenCalledWith('aria-hidden', 'true');
   });
 
   test('pending map is initially empty', () => {
-    const ss = new SharedServices(IFRAME_URL);
+    const ss = new sharedServices(IFRAME_URL);
     expect(ss.pending.size).toBe(0);
   });
 
   test('exposes localStorage, sessionStorage, cache, websocket, sharedWorker, broadcastChannel', () => {
-    const ss = new SharedServices(IFRAME_URL);
+    const ss = new sharedServices(IFRAME_URL);
     expect(ss.localStorage).toBeDefined();
     expect(ss.sessionStorage).toBeDefined();
     expect(ss.cache).toBeDefined();
@@ -127,7 +127,7 @@ describe('constructor', () => {
 
 describe('ready promise', () => {
   test('resolves when __ready message is received', async () => {
-    const ss = new SharedServices(IFRAME_URL);
+    const ss = new sharedServices(IFRAME_URL);
     let resolved = false;
     ss.ready.then(() => { resolved = true; });
 
@@ -138,7 +138,7 @@ describe('ready promise', () => {
   });
 
   test('ignores __ready messages from the wrong source', async () => {
-    const ss    = new SharedServices(IFRAME_URL);
+    const ss    = new sharedServices(IFRAME_URL);
     const wrong = { postMessage: jest.fn() };
 
     ss._onMessage({ source: wrong, data: { __ss: true, __ready: true } });
@@ -844,7 +844,7 @@ describe('destroy', () => {
     expect(ss.pending.size).toBe(1);
 
     ss.destroy();
-    await expect(p).rejects.toThrow('SharedServices destroyed');
+    await expect(p).rejects.toThrow('sharedServices destroyed');
   });
 
   test('clears the pending map', () => {
