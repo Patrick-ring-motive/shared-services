@@ -15,11 +15,13 @@ const SharedServices = require('../client.js');
 // Shared mock state (reset between tests)
 // ─────────────────────────────────────────────────────────────────────────────
 
-let mockPost;        // spy on iframe.contentWindow.postMessage
-let mockIframeCW;   // fake contentWindow object
-let mockIframe;     // fake iframe element
+let mockPost;
+let mockIframeCW;
+let mockIframe;
+let uuidSeq;
 
 beforeEach(() => {
+  uuidSeq      = 0;
   mockPost     = jest.fn();
   mockIframeCW = { postMessage: mockPost };
   mockIframe   = {
@@ -31,30 +33,6 @@ beforeEach(() => {
 
   jest.spyOn(document, 'createElement').mockReturnValue(mockIframe);
   jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
-
-  let uuidSeq = 0;
-  const origRandom = Math.random;
-  jest.spyOn(Math, 'random').mockImplementation(() => {
-    // Return a value that encodes the sequence number so IDs are deterministic.
-    // The UUID template uses Math.random() multiple times per call; we exploit
-    // the fact that only the first nibble of each hex group matters for our
-    // test assertions by making every call return a fixed recognisable value.
-    uuidSeq += 0; // incremented below on first call per _send
-    return 0;
-  });
-  // Ensure crypto.randomUUID is absent so the fallback path is exercised.
-  const origCrypto = globalThis.crypto;
-  Object.defineProperty(globalThis, 'crypto', {
-    value: { ...origCrypto, randomUUID: undefined },
-    configurable: true,
-    writable: true,
-  });
-  // Provide our own deterministic generator through a simple module-level override.
-  // Restore origRandom and origCrypto to keep tests isolated.
-  afterEach(() => {
-    Math.random = origRandom;
-    Object.defineProperty(globalThis, 'crypto', { value: origCrypto, configurable: true, writable: true });
-  });
 });
 
 afterEach(() => {
@@ -70,19 +48,13 @@ const ORIGIN     = 'https://user.github.io';
 
 /** Create a SharedServices instance and immediately signal it as ready. */
 function makeSS(url = IFRAME_URL, opts = {}) {
-  const ss = new SharedServices(url, { targetOrigin: ORIGIN, ...opts });
+  const ss = new SharedServices(url, {
+    targetOrigin: ORIGIN,
+    generateId: () => `test-uuid-${++uuidSeq}`,
+    ...opts,
+  });
   ss._onMessage({ source: mockIframeCW, data: { __ss: true, __ready: true } });
   return ss;
-}
-
-/**
- * Call _send on ss, flush one microtask cycle so the .then() runs,
- * then return the recorded postMessage call payload and the pending id.
- */
-async function flushSend(ss) {
-  await Promise.resolve();
-  const call = mockPost.mock.calls[mockPost.mock.calls.length - 1];
-  return call ? call[0] : null;
 }
 
 /** Inject a successful response into ss. */
