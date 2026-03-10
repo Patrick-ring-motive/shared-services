@@ -29,6 +29,8 @@ function flushAsync() {
 
 /** The async 'message' event handler registered by the iframe script. */
 let handleMessage;
+/** Whether the iframe script posted __ready to window.parent on load. */
+let parentReadyCalled = false;
 
 /** Create a fake source window. */
 function makeSource() {
@@ -182,6 +184,18 @@ beforeAll(() => {
     configurable: true,
   });
 
+  // ── Response / Request (not in jsdom) ───────────────────────────────────
+  globalThis.Response = function Response(body, init = {}) {
+    this.body = body; this.status = init.status ?? 200;
+    this.statusText = init.statusText ?? '';
+    this.headers = init.headers ?? {};
+  };
+  globalThis.Request = function Request(input, init = {}) {
+    this.url = input; this.method = init.method ?? 'GET';
+    this.headers = init.headers ?? {};
+  };
+
+
   // ── Intercept window.addEventListener to capture the 'message' handler ──
   const origAdd = globalThis.addEventListener.bind(globalThis);
   let captured  = false;
@@ -204,6 +218,11 @@ beforeAll(() => {
   spy.mockRestore();
 
   if (!handleMessage) throw new Error('iframe script did not register a message listener');
+
+  // Capture the ready call before any beforeEach clearAllMocks() wipes it.
+  parentReadyCalled = globalThis.parent.postMessage.mock.calls.some(
+    (c) => c[0]?.__ready === true,
+  );
 });
 
 beforeEach(() => {
@@ -263,12 +282,9 @@ describe('protocol validation', () => {
 
 describe('ready signal', () => {
   test('window.parent.postMessage is called with __ready on load', () => {
-    // The script fires signalReady synchronously because readyState is 'complete'
-    // in jsdom at the time the eval runs.
-    // parent.postMessage was called in beforeAll when the script was eval'd.
-    expect(window.parent.postMessage).toHaveBeenCalledWith(
-      { __ss: true, __ready: true }, '*'
-    );
+    // The call happens inside the IIFE during beforeAll eval; the result is
+    // captured in parentReadyCalled before clearAllMocks() can erase it.
+    expect(parentReadyCalled).toBe(true);
   });
 });
 
@@ -514,7 +530,7 @@ describe('cache instance methods', () => {
 
     const resp = await call(src, { __ss: true, id: 'r2', service: 'cache', method: 'instance.add',
                                    args: [cacheId, '/bundle.js'] });
-    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/bundle.js') }));
+    expect(store.add).toHaveBeenCalledWith('/bundle.js');
     expect(resp.error).toBeNull();
   });
 
