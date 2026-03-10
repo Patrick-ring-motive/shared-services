@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SharedServices — client.js unit tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 20px;
+      background: #f8fafc;
+      color: #1e293b;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 2px; }
+    p.subtitle { color: #64748b; font-size: .875rem; margin: 0 0 24px; }
+    #results { margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>SharedServices — client.js unit tests</h1>
+  <p class="subtitle">In-browser run via jest-browser-shim.js (no build step required)</p>
+  <div id="results"></div>
+
+  <!--
+    Step 1 — Provide a require() shim so the CommonJS test file loads
+             in the browser without any modification.
+  -->
+  <script>
+    function require(mod) {
+      if (mod === '../client.js') return globalThis.SharedServices;
+      throw new Error('Unknown module requested: ' + mod);
+    }
+  </script>
+
+  <!--
+    Step 2 — Production library.
+             The UMD footer registers globalThis.SharedServices.
+  -->
+  <script src="../client.js"></script>
+
+  <!--
+    Step 3 — Minimal Jest-compatible harness.
+             Defines: jest, expect, describe, test, it,
+                      beforeEach, afterEach, __runTests
+  -->
+  <script src="jest-browser-shim.js"></script>
+
+  <!--
+    Step 4 — Test suite.
+             Runs synchronously; all describe/test/beforeEach/afterEach
+             calls register into the shim's queue.
+  -->
+  <script src="client.test.js"></script>
+
+  <!--
+    Step 5 — Execute the collected tests and render results.
+  -->
+  <script>
+    globalThis.__runTests();
+  </script>
+</body>
+</html>
