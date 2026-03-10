@@ -43,8 +43,8 @@ afterEach(() => {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const IFRAME_URL = 'https://user.github.io/repo/shared-services.html';
-const ORIGIN     = 'https://user.github.io';
+const IFRAME_URL = 'https://patrick-ring-motive.github.io/shared-services/shared-services.html';
+const ORIGIN     = 'https://patrick-ring-motive.github.io';
 
 /** Create a sharedServices instance and immediately signal it as ready. */
 function makeSS(url = IFRAME_URL, opts = {}) {
@@ -687,11 +687,11 @@ describe('websocket', () => {
 describe('sharedWorker', () => {
   test('connect() sends sharedWorker.connect and returns a handle', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://user.github.io/worker.js');
+    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
       service: 'sharedWorker', method: 'connect',
-      args:    ['https://user.github.io/worker.js'],
+      args:    ['https://patrick-ring-motive.github.io/worker.js'],
     });
     respond(ss, 'test-uuid-1', { workerId: 'w-1' });
     const worker = await p;
@@ -702,10 +702,10 @@ describe('sharedWorker', () => {
 
   test('connect() with name includes it in args', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://user.github.io/worker.js', 'my-worker');
+    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js', 'my-worker');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0].args).toEqual([
-      'https://user.github.io/worker.js', 'my-worker',
+      'https://patrick-ring-motive.github.io/worker.js', 'my-worker',
     ]);
     respond(ss, 'test-uuid-1', { workerId: 'w-2' });
     await p;
@@ -713,7 +713,7 @@ describe('sharedWorker', () => {
 
   test('worker.postMessage() sends sharedWorker.postMessage', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://user.github.io/worker.js');
+    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
     await Promise.resolve();
     respond(ss, 'test-uuid-1', { workerId: 'w-3' });
     const worker = await p;
@@ -731,7 +731,7 @@ describe('sharedWorker', () => {
 
   test('worker.disconnect() removes emitter and sends sharedWorker.disconnect', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://user.github.io/worker.js');
+    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
     await Promise.resolve();
     respond(ss, 'test-uuid-1', { workerId: 'w-4' });
     const worker = await p;
