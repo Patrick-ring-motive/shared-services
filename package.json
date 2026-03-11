@@ -1,0 +1,17 @@
+{
+  "name": "shared-services",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --verbose"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "jest-environment-jsdom",
+    "setupFiles": ["<rootDir>/tests/setup.js"],
+    "testMatch": ["**/tests/**/*.test.js"]
+  }
+}

@@ -119,6 +119,12 @@ describe('constructor', () => {
       return promise;
     });
   });
+
+  test('ready rejects when _mountIframe throws', async () => {
+    jest.spyOn(document.body, 'appendChild').mockImplementation(() => { throw new Error('DOM error'); });
+    const ss = new sharedServices(IFRAME_URL);
+    await expect(ss.ready).rejects.toThrow('DOM error');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
