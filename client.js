@@ -106,7 +106,10 @@ class EventEmitter {
 function serializeRequest(req) {
   if (!req || typeof req === "string") return req;
   if (typeof Request !== "undefined" && req instanceof Request) {
-    return { url: req.url, method: req.method };
+    return {
+      url: req.url,
+      method: req.method
+    };
   }
   return req;
 }
@@ -144,7 +147,9 @@ function deserializeResponse(data) {
     blob() {
       const mime = data.headers?.["content-type"] ?? "";
       return Promise.resolve(
-        bodyBytes ? new Blob([bodyBytes], { type: mime }) : new Blob([]),
+        bodyBytes ? new Blob([bodyBytes], {
+          type: mime
+        }) : new Blob([]),
       );
     },
     clone() {
@@ -292,7 +297,10 @@ class SharedServices {
     }
 
     if (msg.id && this.pending.has(msg.id)) {
-      const { resolve, reject } = this.pending.get(msg.id);
+      const {
+        resolve,
+        reject
+      } = this.pending.get(msg.id);
       this.pending.delete(msg.id);
       if (msg.error) {
         const err = new Error(msg.error.message || String(msg.error));
@@ -309,24 +317,32 @@ class SharedServices {
   _send(service, method, args) {
     return this.ready.then(
       () =>
-        new Promise((resolve, reject) => {
-          let id;
-          if (this._generateId) {
-            id = this._generateId();
-          } else if (
-            typeof crypto !== "undefined" &&
-            typeof crypto.randomUUID === "function"
-          ) {
-            id = crypto.randomUUID();
-          } else {
-            id = Math.random().toString(36).slice(2);
-          }
-          this.pending.set(id, { resolve, reject });
-          this._iframe.contentWindow.postMessage(
-            { __ss: true, id, service, method, args },
-            this._targetOrigin,
-          );
-        }),
+      new Promise((resolve, reject) => {
+        let id;
+        if (this._generateId) {
+          id = this._generateId();
+        } else if (
+          typeof crypto !== "undefined" &&
+          typeof crypto.randomUUID === "function"
+        ) {
+          id = crypto.randomUUID();
+        } else {
+          id = Math.random().toString(36).slice(2);
+        }
+        this.pending.set(id, {
+          resolve,
+          reject
+        });
+        this._iframe.contentWindow.postMessage({
+            __ss: true,
+            id,
+            service,
+            method,
+            args
+          },
+          this._targetOrigin,
+        );
+      }),
     );
   }
 
@@ -348,17 +364,30 @@ class SharedServices {
   /* ---- fetch ---------------------------------------------------------- */
 
   async fetch(url, options = {}) {
-    const init = { ...options, body: serializeBody(options.body) };
+    const init = {
+      ...options,
+      body: serializeBody(options.body)
+    };
     const data = await this._send("fetch", "fetch", [url, init]);
     return deserializeResponse(data);
   }
 
   /* ---- XHR ------------------------------------------------------------ */
 
-  xhr({ method = "GET", url, body, headers, responseType } = {}) {
-    return this._send("xhr", "xhr", [
-      { method, url, body: serializeBody(body), headers, responseType },
-    ]);
+  xhr({
+    method = "GET",
+    url,
+    body,
+    headers,
+    responseType
+  } = {}) {
+    return this._send("xhr", "xhr", [{
+      method,
+      url,
+      body: serializeBody(body),
+      headers,
+      responseType
+    }, ]);
   }
 
   /* ---- Cache API ------------------------------------------------------ */
@@ -396,9 +425,9 @@ class SharedServices {
       put: async (req, res) => {
         const buf = await res.arrayBuffer();
         const entries =
-          typeof res.headers.entries === "function"
-            ? res.headers.entries()
-            : Object.entries(res.headers);
+          typeof res.headers.entries === "function" ?
+          res.headers.entries() :
+          Object.entries(res.headers);
         return send("instance.put", [
           cacheId,
           serializeRequest(req),
@@ -414,7 +443,9 @@ class SharedServices {
 
     return {
       open: async (name) => {
-        const { cacheId } = await send("storage.open", [name]);
+        const {
+          cacheId
+        } = await send("storage.open", [name]);
         return makeCacheHandle(cacheId);
       },
       match: async (req, opts) =>
@@ -440,7 +471,9 @@ class SharedServices {
        * @returns {Promise<WebSocketHandle>}
        */
       connect: async (url, protocols) => {
-        const { wsId } = await this._send(
+        const {
+          wsId
+        } = await this._send(
           "websocket",
           "connect",
           protocols ? [url, protocols] : [url],
@@ -478,7 +511,9 @@ class SharedServices {
        * @returns {Promise<SharedWorkerHandle>}
        */
       connect: async (url, name) => {
-        const { workerId } = await this._send(
+        const {
+          workerId
+        } = await this._send(
           "sharedWorker",
           "connect",
           name ? [url, name] : [url],
@@ -512,7 +547,9 @@ class SharedServices {
        * @returns {Promise<BroadcastChannelHandle>}
        */
       subscribe: async (name) => {
-        const { channelId } = await this._send(
+        const {
+          channelId
+        } = await this._send(
           "broadcastChannel",
           "subscribe",
           [name],
@@ -541,7 +578,10 @@ class SharedServices {
   destroy() {
     globalThis.removeEventListener("message", this._messageHandler);
     this._iframe?.remove();
-    for (const { reject } of this.pending.values()) {
+    for (const {
+        reject
+      }
+      of this.pending.values()) {
       reject(new Error("SharedServices destroyed"));
     }
     this.pending.clear();

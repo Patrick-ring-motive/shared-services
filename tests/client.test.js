@@ -21,14 +21,16 @@ let mockIframe;
 let uuidSeq;
 
 beforeEach(() => {
-  uuidSeq      = 0;
-  mockPost     = jest.fn();
-  mockIframeCW = { postMessage: mockPost };
-  mockIframe   = {
+  uuidSeq = 0;
+  mockPost = jest.fn();
+  mockIframeCW = {
+    postMessage: mockPost
+  };
+  mockIframe = {
     contentWindow: mockIframeCW,
-    setAttribute:  jest.fn(),
-    remove:        jest.fn(),
-    style:         {},
+    setAttribute: jest.fn(),
+    remove: jest.fn(),
+    style: {},
   };
 
   jest.spyOn(document, 'createElement').mockReturnValue(mockIframe);
@@ -44,7 +46,7 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IFRAME_URL = 'https://patrick-ring-motive.github.io/shared-services/shared-services.html';
-const ORIGIN     = 'https://patrick-ring-motive.github.io';
+const ORIGIN = 'https://patrick-ring-motive.github.io';
 
 /** Create a sharedServices instance and immediately signal it as ready. */
 function makeSS(url = IFRAME_URL, opts = {}) {
@@ -53,7 +55,13 @@ function makeSS(url = IFRAME_URL, opts = {}) {
     generateId: () => `test-uuid-${++uuidSeq}`,
     ...opts,
   });
-  ss._onMessage({ source: mockIframeCW, data: { __ss: true, __ready: true } });
+  ss._onMessage({
+    source: mockIframeCW,
+    data: {
+      __ss: true,
+      __ready: true
+    }
+  });
   return ss;
 }
 
@@ -61,7 +69,12 @@ function makeSS(url = IFRAME_URL, opts = {}) {
 function respond(ss, id, result) {
   ss._onMessage({
     source: mockIframeCW,
-    data:   { __ss: true, id, result, error: null },
+    data: {
+      __ss: true,
+      id,
+      result,
+      error: null
+    },
   });
 }
 
@@ -69,7 +82,15 @@ function respond(ss, id, result) {
 function respondError(ss, id, name, message) {
   ss._onMessage({
     source: mockIframeCW,
-    data:   { __ss: true, id, result: null, error: { name, message } },
+    data: {
+      __ss: true,
+      id,
+      result: null,
+      error: {
+        name,
+        message
+      }
+    },
   });
 }
 
@@ -112,7 +133,9 @@ describe('constructor', () => {
     const promise = ss.localStorage.getItem('k');
     return Promise.resolve().then(() => {
       expect(mockPost).toHaveBeenCalledWith(
-        expect.objectContaining({ __ss: true }),
+        expect.objectContaining({
+          __ss: true
+        }),
         ORIGIN
       );
       respond(ss, 'test-uuid-1', null);
@@ -121,7 +144,9 @@ describe('constructor', () => {
   });
 
   test('ready rejects when _mountIframe throws', async () => {
-    jest.spyOn(document.body, 'appendChild').mockImplementation(() => { throw new Error('DOM error'); });
+    jest.spyOn(document.body, 'appendChild').mockImplementation(() => {
+      throw new Error('DOM error');
+    });
     const ss = new sharedServices(IFRAME_URL);
     await expect(ss.ready).rejects.toThrow('DOM error');
   });
@@ -135,19 +160,35 @@ describe('ready promise', () => {
   test('resolves when __ready message is received', async () => {
     const ss = new sharedServices(IFRAME_URL);
     let resolved = false;
-    ss.ready.then(() => { resolved = true; });
+    ss.ready.then(() => {
+      resolved = true;
+    });
 
     expect(resolved).toBe(false);
-    ss._onMessage({ source: mockIframeCW, data: { __ss: true, __ready: true } });
+    ss._onMessage({
+      source: mockIframeCW,
+      data: {
+        __ss: true,
+        __ready: true
+      }
+    });
     await ss.ready;
     expect(resolved).toBe(true);
   });
 
   test('ignores __ready messages from the wrong source', async () => {
-    const ss    = new sharedServices(IFRAME_URL);
-    const wrong = { postMessage: jest.fn() };
+    const ss = new sharedServices(IFRAME_URL);
+    const wrong = {
+      postMessage: jest.fn()
+    };
 
-    ss._onMessage({ source: wrong, data: { __ss: true, __ready: true } });
+    ss._onMessage({
+      source: wrong,
+      data: {
+        __ss: true,
+        __ready: true
+      }
+    });
 
     // ready should NOT have resolved — race with 10ms timeout
     const result = await Promise.race([
@@ -164,7 +205,7 @@ describe('ready promise', () => {
 
 describe('_onMessage', () => {
   test('resolves pending promise on success response', async () => {
-    const ss      = makeSS();
+    const ss = makeSS();
     const promise = ss.localStorage.getItem('key');
     await Promise.resolve();
     respond(ss, 'test-uuid-1', 'theValue');
@@ -172,16 +213,19 @@ describe('_onMessage', () => {
   });
 
   test('rejects pending promise on error response', async () => {
-    const ss      = makeSS();
+    const ss = makeSS();
     const promise = ss.localStorage.getItem('key');
     await Promise.resolve();
     respondError(ss, 'test-uuid-1', 'TypeError', 'something went wrong');
-    await expect(promise).rejects.toMatchObject({ name: 'TypeError', message: 'something went wrong' });
+    await expect(promise).rejects.toMatchObject({
+      name: 'TypeError',
+      message: 'something went wrong'
+    });
   });
 
   test('removes fulfilled entry from pending map', async () => {
     const ss = makeSS();
-    const p  = ss.localStorage.getItem('k');
+    const p = ss.localStorage.getItem('k');
     await Promise.resolve();
     expect(ss.pending.size).toBe(1);
     respond(ss, 'test-uuid-1', null);
@@ -190,16 +234,28 @@ describe('_onMessage', () => {
   });
 
   test('dispatches __event to matching emitter', async () => {
-    const ss      = makeSS();
-    const emitter = { _emit: jest.fn() };
+    const ss = makeSS();
+    const emitter = {
+      _emit: jest.fn()
+    };
     ss._emitters.set('conn-abc', emitter);
 
     ss._onMessage({
       source: mockIframeCW,
-      data:   { __ss: true, __event: true, connectionId: 'conn-abc', event: 'message', data: { text: 'hi' } },
+      data: {
+        __ss: true,
+        __event: true,
+        connectionId: 'conn-abc',
+        event: 'message',
+        data: {
+          text: 'hi'
+        }
+      },
     });
 
-    expect(emitter._emit).toHaveBeenCalledWith('message', { text: 'hi' });
+    expect(emitter._emit).toHaveBeenCalledWith('message', {
+      text: 'hi'
+    });
   });
 
   test('ignores __event for unknown connection id', () => {
@@ -207,25 +263,47 @@ describe('_onMessage', () => {
     expect(() => {
       ss._onMessage({
         source: mockIframeCW,
-        data:   { __ss: true, __event: true, connectionId: 'no-such-id', event: 'message', data: {} },
+        data: {
+          __ss: true,
+          __event: true,
+          connectionId: 'no-such-id',
+          event: 'message',
+          data: {}
+        },
       });
     }).not.toThrow();
   });
 
   test('ignores messages with __ss !== true', () => {
     const ss = makeSS();
-    ss._onMessage({ source: mockIframeCW, data: { id: 'test-uuid-1', result: 'ignored' } });
+    ss._onMessage({
+      source: mockIframeCW,
+      data: {
+        id: 'test-uuid-1',
+        result: 'ignored'
+      }
+    });
     expect(ss.pending.size).toBe(0);
   });
 
   test('ignores messages from the wrong source window', async () => {
-    const ss      = makeSS();
+    const ss = makeSS();
     const promise = ss.localStorage.getItem('k');
     await Promise.resolve();
 
     // respond from wrong source — should NOT resolve the promise
-    const wrong = { postMessage: jest.fn() };
-    ss._onMessage({ source: wrong, data: { __ss: true, id: 'test-uuid-1', result: 'injected', error: null } });
+    const wrong = {
+      postMessage: jest.fn()
+    };
+    ss._onMessage({
+      source: wrong,
+      data: {
+        __ss: true,
+        id: 'test-uuid-1',
+        result: 'injected',
+        error: null
+      }
+    });
 
     const result = await Promise.race([
       promise.then(v => `resolved:${v}`),
@@ -244,21 +322,47 @@ describe('_onMessage', () => {
 
 describe('localStorage', () => {
   const METHODS = [
-    ['getItem',    [['myKey'],          ['myKey']]],
-    ['setItem',    [['myKey', 'val'],   ['myKey', 'val']]],
-    ['removeItem', [['myKey'],          ['myKey']]],
-    ['clear',      [[],                 []]],
-    ['key',        [[0],                [0]]],
-    ['length',     [[],                 []]],
-    ['getAll',     [[],                 []]],
+    ['getItem', [
+      ['myKey'],
+      ['myKey']
+    ]],
+    ['setItem', [
+      ['myKey', 'val'],
+      ['myKey', 'val']
+    ]],
+    ['removeItem', [
+      ['myKey'],
+      ['myKey']
+    ]],
+    ['clear', [
+      [],
+      []
+    ]],
+    ['key', [
+      [0],
+      [0]
+    ]],
+    ['length', [
+      [],
+      []
+    ]],
+    ['getAll', [
+      [],
+      []
+    ]],
   ];
 
   test.each(METHODS)('%s sends correct service/method/args', async (method, [callArgs, sentArgs]) => {
-    const ss      = makeSS();
+    const ss = makeSS();
     const promise = ss.localStorage[method](...callArgs);
     await Promise.resolve();
-    expect(mockPost).toHaveBeenCalledWith(
-      { __ss: true, id: 'test-uuid-1', service: 'localStorage', method, args: sentArgs },
+    expect(mockPost).toHaveBeenCalledWith({
+        __ss: true,
+        id: 'test-uuid-1',
+        service: 'localStorage',
+        method,
+        args: sentArgs
+      },
       ORIGIN
     );
     respond(ss, 'test-uuid-1', null);
@@ -267,9 +371,11 @@ describe('localStorage', () => {
 
   test('setItem stringifies the value', async () => {
     const ss = makeSS();
-    const p  = ss.localStorage.setItem('num', 42);
+    const p = ss.localStorage.setItem('num', 42);
     await Promise.resolve();
-    const { args } = mockPost.mock.calls[0][0];
+    const {
+      args
+    } = mockPost.mock.calls[0][0];
     expect(args[1]).toBe('42'); // coerced to string
     respond(ss, 'test-uuid-1', null);
     await p;
@@ -283,10 +389,12 @@ describe('localStorage', () => {
 describe('sessionStorage', () => {
   test('uses service name "sessionStorage"', async () => {
     const ss = makeSS();
-    const p  = ss.sessionStorage.getItem('k');
+    const p = ss.sessionStorage.getItem('k');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'sessionStorage', method: 'getItem', args: ['k'],
+      service: 'sessionStorage',
+      method: 'getItem',
+      args: ['k'],
     });
     respond(ss, 'test-uuid-1', 'v');
     expect(await p).toBe('v');
@@ -300,10 +408,16 @@ describe('sessionStorage', () => {
 describe('fetch', () => {
   test('sends fetch service/method with url and options', async () => {
     const ss = makeSS();
-    const p  = ss.fetch('https://api.example.com/data', { method: 'POST', body: 'text' });
+    const p = ss.fetch('https://api.example.com/data', {
+      method: 'POST',
+      body: 'text'
+    });
     await Promise.resolve();
     const sent = mockPost.mock.calls[0][0];
-    expect(sent).toMatchObject({ service: 'fetch', method: 'fetch' });
+    expect(sent).toMatchObject({
+      service: 'fetch',
+      method: 'fetch'
+    });
     expect(sent.args[0]).toBe('https://api.example.com/data');
     expect(sent.args[1].method).toBe('POST');
     // clean up
@@ -312,22 +426,35 @@ describe('fetch', () => {
   });
 
   test('serializes ArrayBuffer body to number array', async () => {
-    const ss  = makeSS();
+    const ss = makeSS();
     const buf = new Uint8Array([1, 2, 3]).buffer;
-    const p   = ss.fetch('https://api.example.com/', { body: buf });
+    const p = ss.fetch('https://api.example.com/', {
+      body: buf
+    });
     await Promise.resolve();
-    const { args } = mockPost.mock.calls[0][0];
+    const {
+      args
+    } = mockPost.mock.calls[0][0];
     expect(args[1].body).toEqual([1, 2, 3]);
     respond(ss, 'test-uuid-1', null);
     await p;
   });
 
   test('deserializes response into a Response-like object', async () => {
-    const ss   = makeSS();
-    const data = { ok: true, status: 200, statusText: 'OK', url: 'https://api.example.com/',
-                   redirected: false, type: 'cors', headers: { 'content-type': 'application/json' },
-                   body: [123, 125] }; // "{}"
-    const p    = ss.fetch('https://api.example.com/');
+    const ss = makeSS();
+    const data = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      url: 'https://api.example.com/',
+      redirected: false,
+      type: 'cors',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: [123, 125]
+    }; // "{}"
+    const p = ss.fetch('https://api.example.com/');
     await Promise.resolve();
     respond(ss, 'test-uuid-1', data);
     const res = await p;
@@ -339,26 +466,40 @@ describe('fetch', () => {
   });
 
   test('returns null-body Response-like when body array is empty', async () => {
-    const ss   = makeSS();
-    const p    = ss.fetch('https://api.example.com/');
+    const ss = makeSS();
+    const p = ss.fetch('https://api.example.com/');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { ok: true, status: 204, statusText: 'No Content',
-                                  url: '', redirected: false, type: 'basic',
-                                  headers: {}, body: [] });
-    const res  = await p;
+    respond(ss, 'test-uuid-1', {
+      ok: true,
+      status: 204,
+      statusText: 'No Content',
+      url: '',
+      redirected: false,
+      type: 'basic',
+      headers: {},
+      body: []
+    });
+    const res = await p;
     expect(await res.text()).toBe('');
     const ab = await res.arrayBuffer();
     expect(ab.byteLength).toBe(0);
   });
 
   test('response.clone() returns an independent copy', async () => {
-    const ss   = makeSS();
-    const p    = ss.fetch('https://api.example.com/');
+    const ss = makeSS();
+    const p = ss.fetch('https://api.example.com/');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { ok: true, status: 200, statusText: 'OK', url: '',
-                                  redirected: false, type: 'basic',
-                                  headers: {}, body: [65] }); // "A"
-    const res   = await p;
+    respond(ss, 'test-uuid-1', {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      url: '',
+      redirected: false,
+      type: 'basic',
+      headers: {},
+      body: [65]
+    }); // "A"
+    const res = await p;
     const clone = res.clone();
     expect(await clone.text()).toBe('A');
     expect(await res.text()).toBe('A'); // original still readable
@@ -372,25 +513,41 @@ describe('fetch', () => {
 describe('xhr', () => {
   test('sends correct service/method/args for a GET', async () => {
     const ss = makeSS();
-    const p  = ss.xhr({ url: 'https://api.example.com/resource' });
+    const p = ss.xhr({
+      url: 'https://api.example.com/resource'
+    });
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'xhr', method: 'xhr',
-      args: [{ method: 'GET', url: 'https://api.example.com/resource', body: undefined,
-              headers: undefined, responseType: undefined }],
+      service: 'xhr',
+      method: 'xhr',
+      args: [{
+        method: 'GET',
+        url: 'https://api.example.com/resource',
+        body: undefined,
+        headers: undefined,
+        responseType: undefined
+      }],
     });
-    respond(ss, 'test-uuid-1', { status: 200 });
+    respond(ss, 'test-uuid-1', {
+      status: 200
+    });
     await p;
   });
 
   test('serializes ArrayBuffer body', async () => {
-    const ss  = makeSS();
+    const ss = makeSS();
     const buf = new Uint8Array([10, 20]).buffer;
-    const p   = ss.xhr({ method: 'POST', url: 'https://x.com/', body: buf });
+    const p = ss.xhr({
+      method: 'POST',
+      url: 'https://x.com/',
+      body: buf
+    });
     await Promise.resolve();
     const sentBody = mockPost.mock.calls[0][0].args[0].body;
     expect(sentBody).toEqual([10, 20]);
-    respond(ss, 'test-uuid-1', { status: 201 });
+    respond(ss, 'test-uuid-1', {
+      status: 201
+    });
     await p;
   });
 });
@@ -402,39 +559,60 @@ describe('xhr', () => {
 describe('cache storage methods', () => {
   test('keys() sends storage.keys', async () => {
     const ss = makeSS();
-    const p  = ss.cache.keys();
+    const p = ss.cache.keys();
     await Promise.resolve();
-    expect(mockPost.mock.calls[0][0]).toMatchObject({ service: 'cache', method: 'storage.keys' });
+    expect(mockPost.mock.calls[0][0]).toMatchObject({
+      service: 'cache',
+      method: 'storage.keys'
+    });
     respond(ss, 'test-uuid-1', ['v1', 'v2']);
     expect(await p).toEqual(['v1', 'v2']);
   });
 
   test('has() sends storage.has', async () => {
     const ss = makeSS();
-    const p  = ss.cache.has('v1');
+    const p = ss.cache.has('v1');
     await Promise.resolve();
-    expect(mockPost.mock.calls[0][0]).toMatchObject({ service: 'cache', method: 'storage.has', args: ['v1'] });
+    expect(mockPost.mock.calls[0][0]).toMatchObject({
+      service: 'cache',
+      method: 'storage.has',
+      args: ['v1']
+    });
     respond(ss, 'test-uuid-1', true);
     expect(await p).toBe(true);
   });
 
   test('delete() sends storage.delete', async () => {
     const ss = makeSS();
-    const p  = ss.cache.delete('v1');
+    const p = ss.cache.delete('v1');
     await Promise.resolve();
-    expect(mockPost.mock.calls[0][0]).toMatchObject({ service: 'cache', method: 'storage.delete', args: ['v1'] });
+    expect(mockPost.mock.calls[0][0]).toMatchObject({
+      service: 'cache',
+      method: 'storage.delete',
+      args: ['v1']
+    });
     respond(ss, 'test-uuid-1', true);
     expect(await p).toBe(true);
   });
 
   test('match() deserializes response', async () => {
-    const ss   = makeSS();
-    const p    = ss.cache.match('/asset.js');
+    const ss = makeSS();
+    const p = ss.cache.match('/asset.js');
     await Promise.resolve();
-    expect(mockPost.mock.calls[0][0]).toMatchObject({ service: 'cache', method: 'storage.match' });
-    respond(ss, 'test-uuid-1', { ok: true, status: 200, statusText: 'OK',
-                                   url: '/asset.js', redirected: false,
-                                   type: 'basic', headers: {}, body: [72] });
+    expect(mockPost.mock.calls[0][0]).toMatchObject({
+      service: 'cache',
+      method: 'storage.match'
+    });
+    respond(ss, 'test-uuid-1', {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      url: '/asset.js',
+      redirected: false,
+      type: 'basic',
+      headers: {},
+      body: [72]
+    });
     const res = await p;
     expect(res.ok).toBe(true);
     expect(await res.text()).toBe('H');
@@ -442,7 +620,7 @@ describe('cache storage methods', () => {
 
   test('match() returns null when result is null', async () => {
     const ss = makeSS();
-    const p  = ss.cache.match('/missing');
+    const p = ss.cache.match('/missing');
     await Promise.resolve();
     respond(ss, 'test-uuid-1', null);
     expect(await p).toBeNull();
@@ -456,14 +634,16 @@ describe('cache storage methods', () => {
 async function openCache(ss) {
   const pOpen = ss.cache.open('v1');
   await Promise.resolve();
-  respond(ss, 'test-uuid-1', { cacheId: 'cache-remote-1' });
+  respond(ss, 'test-uuid-1', {
+    cacheId: 'cache-remote-1'
+  });
   return pOpen;
 }
 
 describe('cache.open() and Cache handle', () => {
 
   test('open() returns an object with cache instance methods', async () => {
-    const ss    = makeSS();
+    const ss = makeSS();
     const cache = await openCache(ss);
     expect(typeof cache.match).toBe('function');
     expect(typeof cache.matchAll).toBe('function');
@@ -475,37 +655,39 @@ describe('cache.open() and Cache handle', () => {
   });
 
   test('cache.add() sends instance.add with cacheId and serialized request', async () => {
-    const ss    = makeSS();
+    const ss = makeSS();
     const cache = await openCache(ss);
     mockPost.mockClear();
 
     const p = cache.add('/bundle.js');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'cache', method: 'instance.add',
-      args:    ['cache-remote-1', '/bundle.js'],
+      service: 'cache',
+      method: 'instance.add',
+      args: ['cache-remote-1', '/bundle.js'],
     });
     respond(ss, 'test-uuid-2', null);
     await p;
   });
 
   test('cache.keys() sends instance.keys', async () => {
-    const ss    = makeSS();
+    const ss = makeSS();
     const cache = await openCache(ss);
     mockPost.mockClear();
 
     const p = cache.keys();
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'cache', method: 'instance.keys',
-      args:    ['cache-remote-1', null, undefined],
+      service: 'cache',
+      method: 'instance.keys',
+      args: ['cache-remote-1', null, undefined],
     });
     respond(ss, 'test-uuid-2', ['/bundle.js']);
     expect(await p).toEqual(['/bundle.js']);
   });
 
   test('cache.matchAll() with no request sends null', async () => {
-    const ss    = makeSS();
+    const ss = makeSS();
     const cache = await openCache(ss);
     mockPost.mockClear();
 
@@ -519,13 +701,16 @@ describe('cache.open() and Cache handle', () => {
   });
 
   test('cache.put() serializes request URL and response body', async () => {
-    const ss    = makeSS();
+    const ss = makeSS();
     const cache = await openCache(ss);
     mockPost.mockClear();
 
     const fakeResponse = {
-      status: 200, statusText: 'OK',
-      headers: new Headers({ 'content-type': 'text/plain' }),
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({
+        'content-type': 'text/plain'
+      }),
       arrayBuffer: () => Promise.resolve(new Uint8Array([65, 66]).buffer),
     };
     const p = cache.put('/a.txt', fakeResponse);
@@ -547,12 +732,16 @@ describe('cache.open() and Cache handle', () => {
 describe('websocket', () => {
   test('connect() sends websocket.connect and returns a handle with EventEmitter', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://echo.example.com');
+    const p = ss.websocket.connect('wss://echo.example.com');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'websocket', method: 'connect', args: ['wss://echo.example.com'],
+      service: 'websocket',
+      method: 'connect',
+      args: ['wss://echo.example.com'],
     });
-    respond(ss, 'test-uuid-1', { wsId: 'ws-remote-1' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-remote-1'
+    });
     const ws = await p;
 
     expect(ws.id).toBe('ws-remote-1');
@@ -563,25 +752,31 @@ describe('websocket', () => {
 
   test('connect() with protocols includes them in args', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://echo.example.com', ['chat', 'binary']);
+    const p = ss.websocket.connect('wss://echo.example.com', ['chat', 'binary']);
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0].args).toEqual(['wss://echo.example.com', ['chat', 'binary']]);
-    respond(ss, 'test-uuid-1', { wsId: 'ws-r2' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-r2'
+    });
     await p;
   });
 
   test('ws.send() serializes string data', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-abc' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-abc'
+    });
     const ws = await p;
     mockPost.mockClear();
 
     const sp = ws.send('hello');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'websocket', method: 'send', args: ['ws-abc', 'hello', false],
+      service: 'websocket',
+      method: 'send',
+      args: ['ws-abc', 'hello', false],
     });
     respond(ss, 'test-uuid-2', null);
     await sp;
@@ -589,14 +784,16 @@ describe('websocket', () => {
 
   test('ws.send() serializes ArrayBuffer as byte array', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-bin' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-bin'
+    });
     const ws = await p;
     mockPost.mockClear();
 
     const buf = new Uint8Array([1, 2, 3]).buffer;
-    const sp  = ws.send(buf);
+    const sp = ws.send(buf);
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
       args: ['ws-bin', [1, 2, 3], true],
@@ -607,9 +804,11 @@ describe('websocket', () => {
 
   test('ws.close() removes emitter and sends websocket.close', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-c' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-c'
+    });
     const ws = await p;
 
     expect(ss._emitters.has('ws-c')).toBe(true);
@@ -619,7 +818,9 @@ describe('websocket', () => {
 
     expect(ss._emitters.has('ws-c')).toBe(false);
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'websocket', method: 'close', args: ['ws-c', 1000, 'done'],
+      service: 'websocket',
+      method: 'close',
+      args: ['ws-c', 1000, 'done'],
     });
     respond(ss, 'test-uuid-2', null);
     await cp;
@@ -627,9 +828,11 @@ describe('websocket', () => {
 
   test('incoming __event messages are emitted on the ws handle', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-ev' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-ev'
+    });
     const ws = await p;
 
     const received = [];
@@ -637,17 +840,31 @@ describe('websocket', () => {
 
     ss._onMessage({
       source: mockIframeCW,
-      data:   { __ss: true, __event: true, connectionId: 'ws-ev', event: 'message', data: { data: 'ping', isBinary: false } },
+      data: {
+        __ss: true,
+        __event: true,
+        connectionId: 'ws-ev',
+        event: 'message',
+        data: {
+          data: 'ping',
+          isBinary: false
+        }
+      },
     });
 
-    expect(received).toEqual([{ data: 'ping', isBinary: false }]);
+    expect(received).toEqual([{
+      data: 'ping',
+      isBinary: false
+    }]);
   });
 
   test('ws.once() fires only once', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-once' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-once'
+    });
     const ws = await p;
 
     const hits = [];
@@ -655,31 +872,51 @@ describe('websocket', () => {
 
     const push = (data) => ss._onMessage({
       source: mockIframeCW,
-      data:   { __ss: true, __event: true, connectionId: 'ws-once', event: 'message', data },
+      data: {
+        __ss: true,
+        __event: true,
+        connectionId: 'ws-once',
+        event: 'message',
+        data
+      },
     });
 
-    push({ data: 'first' });
-    push({ data: 'second' });
+    push({
+      data: 'first'
+    });
+    push({
+      data: 'second'
+    });
 
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toEqual({ data: 'first' });
+    expect(hits[0]).toEqual({
+      data: 'first'
+    });
   });
 
   test('ws.off() removes a listener', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-off' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-off'
+    });
     const ws = await p;
 
-    const hits  = [];
-    const fn    = d => hits.push(d);
+    const hits = [];
+    const fn = d => hits.push(d);
     ws.on('message', fn);
     ws.off('message', fn);
 
     ss._onMessage({
       source: mockIframeCW,
-      data:   { __ss: true, __event: true, connectionId: 'ws-off', event: 'message', data: {} },
+      data: {
+        __ss: true,
+        __event: true,
+        connectionId: 'ws-off',
+        event: 'message',
+        data: {}
+      },
     });
 
     expect(hits).toHaveLength(0);
@@ -693,13 +930,16 @@ describe('websocket', () => {
 describe('sharedWorker', () => {
   test('connect() sends sharedWorker.connect and returns a handle', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
+    const p = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'sharedWorker', method: 'connect',
-      args:    ['https://patrick-ring-motive.github.io/worker.js'],
+      service: 'sharedWorker',
+      method: 'connect',
+      args: ['https://patrick-ring-motive.github.io/worker.js'],
     });
-    respond(ss, 'test-uuid-1', { workerId: 'w-1' });
+    respond(ss, 'test-uuid-1', {
+      workerId: 'w-1'
+    });
     const worker = await p;
     expect(worker.id).toBe('w-1');
     expect(typeof worker.postMessage).toBe('function');
@@ -708,28 +948,37 @@ describe('sharedWorker', () => {
 
   test('connect() with name includes it in args', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js', 'my-worker');
+    const p = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js', 'my-worker');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0].args).toEqual([
       'https://patrick-ring-motive.github.io/worker.js', 'my-worker',
     ]);
-    respond(ss, 'test-uuid-1', { workerId: 'w-2' });
+    respond(ss, 'test-uuid-1', {
+      workerId: 'w-2'
+    });
     await p;
   });
 
   test('worker.postMessage() sends sharedWorker.postMessage', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
+    const p = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { workerId: 'w-3' });
+    respond(ss, 'test-uuid-1', {
+      workerId: 'w-3'
+    });
     const worker = await p;
     mockPost.mockClear();
 
-    const mp = worker.postMessage({ type: 'ping' });
+    const mp = worker.postMessage({
+      type: 'ping'
+    });
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'sharedWorker', method: 'postMessage',
-      args:    ['w-3', { type: 'ping' }],
+      service: 'sharedWorker',
+      method: 'postMessage',
+      args: ['w-3', {
+        type: 'ping'
+      }],
     });
     respond(ss, 'test-uuid-2', null);
     await mp;
@@ -737,9 +986,11 @@ describe('sharedWorker', () => {
 
   test('worker.disconnect() removes emitter and sends sharedWorker.disconnect', async () => {
     const ss = makeSS();
-    const p  = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
+    const p = ss.sharedWorker.connect('https://patrick-ring-motive.github.io/worker.js');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { workerId: 'w-4' });
+    respond(ss, 'test-uuid-1', {
+      workerId: 'w-4'
+    });
     const worker = await p;
 
     expect(ss._emitters.has('w-4')).toBe(true);
@@ -749,7 +1000,9 @@ describe('sharedWorker', () => {
 
     expect(ss._emitters.has('w-4')).toBe(false);
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'sharedWorker', method: 'disconnect', args: ['w-4'],
+      service: 'sharedWorker',
+      method: 'disconnect',
+      args: ['w-4'],
     });
     respond(ss, 'test-uuid-2', null);
     await dp;
@@ -763,12 +1016,16 @@ describe('sharedWorker', () => {
 describe('broadcastChannel', () => {
   test('subscribe() sends broadcastChannel.subscribe and returns a handle', async () => {
     const ss = makeSS();
-    const p  = ss.broadcastChannel.subscribe('app-events');
+    const p = ss.broadcastChannel.subscribe('app-events');
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'broadcastChannel', method: 'subscribe', args: ['app-events'],
+      service: 'broadcastChannel',
+      method: 'subscribe',
+      args: ['app-events'],
     });
-    respond(ss, 'test-uuid-1', { channelId: 'bc-1' });
+    respond(ss, 'test-uuid-1', {
+      channelId: 'bc-1'
+    });
     const ch = await p;
     expect(ch.id).toBe('bc-1');
     expect(typeof ch.postMessage).toBe('function');
@@ -777,17 +1034,24 @@ describe('broadcastChannel', () => {
 
   test('ch.postMessage() sends broadcastChannel.postMessage', async () => {
     const ss = makeSS();
-    const p  = ss.broadcastChannel.subscribe('sync');
+    const p = ss.broadcastChannel.subscribe('sync');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { channelId: 'bc-2' });
+    respond(ss, 'test-uuid-1', {
+      channelId: 'bc-2'
+    });
     const ch = await p;
     mockPost.mockClear();
 
-    const mp = ch.postMessage({ action: 'reload' });
+    const mp = ch.postMessage({
+      action: 'reload'
+    });
     await Promise.resolve();
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'broadcastChannel', method: 'postMessage',
-      args:    ['bc-2', { action: 'reload' }],
+      service: 'broadcastChannel',
+      method: 'postMessage',
+      args: ['bc-2', {
+        action: 'reload'
+      }],
     });
     respond(ss, 'test-uuid-2', null);
     await mp;
@@ -795,9 +1059,11 @@ describe('broadcastChannel', () => {
 
   test('ch.close() removes emitter and sends broadcastChannel.close', async () => {
     const ss = makeSS();
-    const p  = ss.broadcastChannel.subscribe('sync');
+    const p = ss.broadcastChannel.subscribe('sync');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { channelId: 'bc-3' });
+    respond(ss, 'test-uuid-1', {
+      channelId: 'bc-3'
+    });
     const ch = await p;
 
     expect(ss._emitters.has('bc-3')).toBe(true);
@@ -807,7 +1073,9 @@ describe('broadcastChannel', () => {
 
     expect(ss._emitters.has('bc-3')).toBe(false);
     expect(mockPost.mock.calls[0][0]).toMatchObject({
-      service: 'broadcastChannel', method: 'close', args: ['bc-3'],
+      service: 'broadcastChannel',
+      method: 'close',
+      args: ['bc-3'],
     });
     respond(ss, 'test-uuid-2', null);
     await cp;
@@ -815,9 +1083,11 @@ describe('broadcastChannel', () => {
 
   test('incoming messages are emitted as events on the handle', async () => {
     const ss = makeSS();
-    const p  = ss.broadcastChannel.subscribe('tab-sync');
+    const p = ss.broadcastChannel.subscribe('tab-sync');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { channelId: 'bc-4' });
+    respond(ss, 'test-uuid-1', {
+      channelId: 'bc-4'
+    });
     const ch = await p;
 
     const got = [];
@@ -825,10 +1095,20 @@ describe('broadcastChannel', () => {
 
     ss._onMessage({
       source: mockIframeCW,
-      data:   { __ss: true, __event: true, connectionId: 'bc-4', event: 'message', data: { from: 'tab-B' } },
+      data: {
+        __ss: true,
+        __event: true,
+        connectionId: 'bc-4',
+        event: 'message',
+        data: {
+          from: 'tab-B'
+        }
+      },
     });
 
-    expect(got).toEqual([{ from: 'tab-B' }]);
+    expect(got).toEqual([{
+      from: 'tab-B'
+    }]);
   });
 });
 
@@ -845,7 +1125,7 @@ describe('destroy', () => {
 
   test('rejects all pending promises', async () => {
     const ss = makeSS();
-    const p  = ss.localStorage.getItem('k');
+    const p = ss.localStorage.getItem('k');
     await Promise.resolve();
     expect(ss.pending.size).toBe(1);
 
@@ -861,9 +1141,11 @@ describe('destroy', () => {
 
   test('clears the emitters map', async () => {
     const ss = makeSS();
-    const p  = ss.websocket.connect('wss://x.com');
+    const p = ss.websocket.connect('wss://x.com');
     await Promise.resolve();
-    respond(ss, 'test-uuid-1', { wsId: 'ws-d' });
+    respond(ss, 'test-uuid-1', {
+      wsId: 'ws-d'
+    });
     await p;
     expect(ss._emitters.size).toBe(1);
 
@@ -879,7 +1161,12 @@ describe('destroy', () => {
     expect(() => {
       ss._onMessage({
         source: mockIframeCW,
-        data:   { __ss: true, id: 'orphan', result: 'x', error: null },
+        data: {
+          __ss: true,
+          id: 'orphan',
+          result: 'x',
+          error: null
+        },
       });
     }).not.toThrow();
   });
