@@ -20,436 +20,542 @@
     { __ss: true, __ready: true }                      ← ready signal
 -->
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Shared Services</title>
 </head>
+
 <body>
-<script>
-/* global caches, BroadcastChannel, SharedWorker */
-(function () {
-  'use strict';
+  <script>
+    /* global caches, BroadcastChannel, SharedWorker */
+    (function() {
+      'use strict';
 
-  /* ── connection registry ──────────────────────────────────────── */
-  /**
-   * Keyed by connection ID.
-   * @type {Map<string, {type:string, connection:*, source:Window, origin:string, port?:MessagePort}>}
-   */
-  const registry = new Map();
-  let seq = 0;
+      /* ── connection registry ──────────────────────────────────────── */
+      /**
+       * Keyed by connection ID.
+       * @type {Map<string, {type:string, connection:*, source:Window, origin:string, port?:MessagePort}>}
+       */
+      const registry = new Map();
+      let seq = 0;
 
-  function uid(prefix) {
-    const rand = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2);
-    return prefix + '_' + (++seq) + '_' + rand;
-  }
+      function uid(prefix) {
+        const rand = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ?
+          crypto.randomUUID().slice(0, 8) :
+          Math.random().toString(36).slice(2);
+        return prefix + '_' + (++seq) + '_' + rand;
+      }
 
-  /* ── postMessage helpers ──────────────────────────────────────── */
-  function safeTarget(origin) {
-    // Never use '*' for replies that contain real data — but for this
-    // public aggregator the caller's origin is the correct target.
-    // Fall back to '*' only when origin is the opaque 'null' string
-    // (e.g. a data: or file: parent during local development).
-    return origin === 'null' ? '*' : origin;
-  }
+      /* ── postMessage helpers ──────────────────────────────────────── */
+      function safeTarget(origin) {
+        // Never use '*' for replies that contain real data — but for this
+        // public aggregator the caller's origin is the correct target.
+        // Fall back to '*' only when origin is the opaque 'null' string
+        // (e.g. a data: or file: parent during local development).
+        return origin === 'null' ? '*' : origin;
+      }
 
-  function replyTo(source, origin, id, result, error) {
-    try {
-      source.postMessage(
-        { __ss: true, id, result: result === undefined ? null : result, error: error === undefined ? null : error },
-        safeTarget(origin)
-      );
-    } catch (e) { console.debug('[shared-services] replyTo failed:', e.message); }
-  }
-
-  function notifyClient(entry, connectionId, service, event, data) {
-    try {
-      entry.source.postMessage(
-        { __ss: true, __event: true, connectionId, service, event, data },
-        safeTarget(entry.origin)
-      );
-    } catch (e) { console.debug('[shared-services] notifyClient failed:', e.message); }
-  }
-
-  /* ── serialization helpers ────────────────────────────────────── */
-  async function serializeResponse(res) {
-    if (!res) return null;
-    const buf = await res.arrayBuffer();
-    return {
-      ok:         res.ok,
-      status:     res.status,
-      statusText: res.statusText,
-      url:        res.url,
-      redirected: res.redirected,
-      type:       res.type,
-      headers:    Object.fromEntries(res.headers.entries()),
-      body:       Array.from(new Uint8Array(buf))
-    };
-  }
-
-  function deserializeRequest(req) {
-    if (!req || typeof req === 'string') return req;
-    const init = {};
-    if (req.method)      init.method      = req.method;
-    if (req.headers)     init.headers     = req.headers;
-    if (req.body)        init.body        = new Uint8Array(req.body);
-    if (req.mode)        init.mode        = req.mode;
-    if (req.credentials) init.credentials = req.credentials;
-    if (req.cache)       init.cache       = req.cache;
-    if (req.redirect)    init.redirect    = req.redirect;
-    return new Request(req.url, init);
-  }
-
-  /* ══════════════════════════════════════════════════════════════ */
-  /*  SERVICE HANDLERS                                              */
-  /* ══════════════════════════════════════════════════════════════ */
-
-  /* ── localStorage / sessionStorage ───────────────────────────── */
-  function handleStorage(storage, method, args) {
-    switch (method) {
-      case 'getItem':    return storage.getItem(args[0]);
-      case 'setItem':    storage.setItem(args[0], args[1]); return null;
-      case 'removeItem': storage.removeItem(args[0]); return null;
-      case 'clear':      storage.clear(); return null;
-      case 'key':        return storage.key(args[0]);
-      case 'length':     return storage.length;
-      case 'getAll': {
-        const out = {};
-        for (let i = 0; i < storage.length; i++) {
-          const k = storage.key(i);
-          out[k] = storage.getItem(k);
+      function replyTo(source, origin, id, result, error) {
+        try {
+          source.postMessage({
+              __ss: true,
+              id,
+              result: result === undefined ? null : result,
+              error: error === undefined ? null : error
+            },
+            safeTarget(origin)
+          );
+        } catch (e) {
+          console.debug('[shared-services] replyTo failed:', e.message);
         }
-        return out;
-      }
-      default: throw new Error('Unknown storage method: ' + method);
-    }
-  }
-
-  /* ── fetch ────────────────────────────────────────────────────── */
-  async function handleFetch(args) {
-    const [url, opts = {}] = args;
-    const init = { ...opts };
-    if (Array.isArray(init.body)) init.body = new Uint8Array(init.body);
-    return serializeResponse(await fetch(url, init));
-  }
-
-  /* ── XHR ──────────────────────────────────────────────────────── */
-  function onXhrLoad(xhr, resolve) {
-    const rawLines = xhr.getAllResponseHeaders().trim().split(/[\r\n]+/);
-    const hdrs = {};
-    for (const line of rawLines) {
-      const idx = line.indexOf(': ');
-      if (idx !== -1) hdrs[line.slice(0, idx)] = line.slice(idx + 2);
-    }
-    const responseData = (xhr.responseType === 'arraybuffer' && xhr.response)
-      ? Array.from(new Uint8Array(xhr.response))
-      : xhr.responseText;
-    resolve({
-      status:      xhr.status,
-      statusText:  xhr.statusText,
-      headers:     hdrs,
-      response:    responseData,
-      responseURL: xhr.responseURL
-    });
-  }
-
-  function handleXHR(args) {
-    const [{ method = 'GET', url, body, headers, responseType }] = args;
-    return new Promise(function (resolve, reject) {
-      const xhr = new XMLHttpRequest();
-      xhr.open(method, url, true);
-      if (responseType) xhr.responseType = responseType;
-      if (headers) {
-        Object.keys(headers).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
-      }
-      xhr.onload = function () { onXhrLoad(xhr, resolve); };
-      xhr.onerror   = function () { reject(new Error('XHR network error')); };
-      xhr.ontimeout = function () { reject(new Error('XHR timeout')); };
-      var sendBody = null;
-      if (body != null) sendBody = Array.isArray(body) ? new Uint8Array(body) : body;
-      xhr.send(sendBody);
-    });
-  }
-
-  /* ── Cache API ────────────────────────────────────────────────── */
-  async function handleCache(method, args) {
-    switch (method) {
-      /* CacheStorage methods */
-      case 'storage.keys':   return caches.keys();
-      case 'storage.has':    return caches.has(args[0]);
-      case 'storage.delete': return caches.delete(args[0]);
-      case 'storage.match': {
-        const res = await caches.match(deserializeRequest(args[0]), args[1]);
-        return serializeResponse(res);
-      }
-      case 'storage.open': {
-        const cache   = await caches.open(args[0]);
-        const cacheId = uid('cache');
-        registry.set(cacheId, { type: 'cache', connection: cache });
-        return { cacheId };
       }
 
-      /* Cache instance methods — args[0] is always cacheId */
-      case 'instance.match': {
-        const [id, reqData, opts] = args;
-        const e = requireEntry(id, 'cache');
-        return serializeResponse(await e.connection.match(deserializeRequest(reqData), opts));
+      function notifyClient(entry, connectionId, service, event, data) {
+        try {
+          entry.source.postMessage({
+              __ss: true,
+              __event: true,
+              connectionId,
+              service,
+              event,
+              data
+            },
+            safeTarget(entry.origin)
+          );
+        } catch (e) {
+          console.debug('[shared-services] notifyClient failed:', e.message);
+        }
       }
-      case 'instance.matchAll': {
-        const [id, reqData, opts] = args;
-        const e   = requireEntry(id, 'cache');
-        const req = reqData ? deserializeRequest(reqData) : undefined;
-        const arr = await e.connection.matchAll(req, opts);
-        return Promise.all(arr.map(serializeResponse));
+
+      /* ── serialization helpers ────────────────────────────────────── */
+      async function serializeResponse(res) {
+        if (!res) return null;
+        const buf = await res.arrayBuffer();
+        return {
+          ok: res.ok,
+          status: res.status,
+          statusText: res.statusText,
+          url: res.url,
+          redirected: res.redirected,
+          type: res.type,
+          headers: Object.fromEntries(res.headers.entries()),
+          body: Array.from(new Uint8Array(buf))
+        };
       }
-      case 'instance.add': {
-        const [id, reqData] = args;
-        const e = requireEntry(id, 'cache');
-        await e.connection.add(deserializeRequest(reqData));
-        return null;
+
+      function deserializeRequest(req) {
+        if (!req || typeof req === 'string') return req;
+        const init = {};
+        if (req.method) init.method = req.method;
+        if (req.headers) init.headers = req.headers;
+        if (req.body) init.body = new Uint8Array(req.body);
+        if (req.mode) init.mode = req.mode;
+        if (req.credentials) init.credentials = req.credentials;
+        if (req.cache) init.cache = req.cache;
+        if (req.redirect) init.redirect = req.redirect;
+        return new Request(req.url, init);
       }
-      case 'instance.addAll': {
-        const [id, reqs] = args;
-        const e = requireEntry(id, 'cache');
-        await e.connection.addAll(reqs.map(deserializeRequest));
-        return null;
+
+      /* ══════════════════════════════════════════════════════════════ */
+      /*  SERVICE HANDLERS                                              */
+      /* ══════════════════════════════════════════════════════════════ */
+
+      /* ── localStorage / sessionStorage ───────────────────────────── */
+      function handleStorage(storage, method, args) {
+        switch (method) {
+          case 'getItem':
+            return storage.getItem(args[0]);
+          case 'setItem':
+            storage.setItem(args[0], args[1]);
+            return null;
+          case 'removeItem':
+            storage.removeItem(args[0]);
+            return null;
+          case 'clear':
+            storage.clear();
+            return null;
+          case 'key':
+            return storage.key(args[0]);
+          case 'length':
+            return storage.length;
+          case 'getAll': {
+            const out = {};
+            for (let i = 0; i < storage.length; i++) {
+              const k = storage.key(i);
+              out[k] = storage.getItem(k);
+            }
+            return out;
+          }
+          default:
+            throw new Error('Unknown storage method: ' + method);
+        }
       }
-      case 'instance.put': {
-        const [id, reqData, resData] = args;
-        const e    = requireEntry(id, 'cache');
-        const body = resData.body ? new Uint8Array(resData.body) : undefined;
-        const res  = new Response(body, {
-          status: resData.status, statusText: resData.statusText, headers: resData.headers
+
+      /* ── fetch ────────────────────────────────────────────────────── */
+      async function handleFetch(args) {
+        const [url, opts = {}] = args;
+        const init = {
+          ...opts
+        };
+        if (Array.isArray(init.body)) init.body = new Uint8Array(init.body);
+        return serializeResponse(await fetch(url, init));
+      }
+
+      /* ── XHR ──────────────────────────────────────────────────────── */
+      function onXhrLoad(xhr, resolve) {
+        const rawLines = xhr.getAllResponseHeaders().trim().split(/[\r\n]+/);
+        const hdrs = {};
+        for (const line of rawLines) {
+          const idx = line.indexOf(': ');
+          if (idx !== -1) hdrs[line.slice(0, idx)] = line.slice(idx + 2);
+        }
+        const responseData = (xhr.responseType === 'arraybuffer' && xhr.response) ?
+          Array.from(new Uint8Array(xhr.response)) :
+          xhr.responseText;
+        resolve({
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: hdrs,
+          response: responseData,
+          responseURL: xhr.responseURL
         });
-        await e.connection.put(deserializeRequest(reqData), res);
-        return null;
-      }
-      case 'instance.delete': {
-        const [id, reqData, opts] = args;
-        const e = requireEntry(id, 'cache');
-        return e.connection.delete(deserializeRequest(reqData), opts);
-      }
-      case 'instance.keys': {
-        const [id, reqData, opts] = args;
-        const e   = requireEntry(id, 'cache');
-        const req = reqData ? deserializeRequest(reqData) : undefined;
-        const keys = await e.connection.keys(req, opts);
-        return keys.map(function (r) { return r.url; });
       }
 
-      default: throw new Error('Unknown cache method: ' + method);
-    }
-  }
+      function handleXHR(args) {
+        const [{
+          method = 'GET',
+          url,
+          body,
+          headers,
+          responseType
+        }] = args;
+        return new Promise(function(resolve, reject) {
+          const xhr = new XMLHttpRequest();
+          xhr.open(method, url, true);
+          if (responseType) xhr.responseType = responseType;
+          if (headers) {
+            Object.keys(headers).forEach(function(k) {
+              xhr.setRequestHeader(k, headers[k]);
+            });
+          }
+          xhr.onload = function() {
+            onXhrLoad(xhr, resolve);
+          };
+          xhr.onerror = function() {
+            reject(new Error('XHR network error'));
+          };
+          xhr.ontimeout = function() {
+            reject(new Error('XHR timeout'));
+          };
+          var sendBody = null;
+          if (body != null) sendBody = Array.isArray(body) ? new Uint8Array(body) : body;
+          xhr.send(sendBody);
+        });
+      }
 
-  /* ── WebSocket ────────────────────────────────────────────────── */
-  function handleWebSocket(method, args, source, origin) {
-    switch (method) {
-      case 'connect': {
-        const [url, protocols] = args;
-        const wsId = uid('ws');
-        return new Promise(function (resolve, reject) {
-          var opened = false;
-          var ws     = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
-          ws.binaryType = 'arraybuffer';
+      /* ── Cache API ────────────────────────────────────────────────── */
+      async function handleCache(method, args) {
+        switch (method) {
+          /* CacheStorage methods */
+          case 'storage.keys':
+            return caches.keys();
+          case 'storage.has':
+            return caches.has(args[0]);
+          case 'storage.delete':
+            return caches.delete(args[0]);
+          case 'storage.match': {
+            const res = await caches.match(deserializeRequest(args[0]), args[1]);
+            return serializeResponse(res);
+          }
+          case 'storage.open': {
+            const cache = await caches.open(args[0]);
+            const cacheId = uid('cache');
+            registry.set(cacheId, {
+              type: 'cache',
+              connection: cache
+            });
+            return {
+              cacheId
+            };
+          }
 
-          ws.addEventListener('open', function () {
-            opened = true;
-            registry.set(wsId, { type: 'websocket', connection: ws, source: source, origin: origin });
-            resolve({ wsId: wsId });
-            // 'open' event is implied by connect() resolving; no separate notification needed
-          });
+          /* Cache instance methods — args[0] is always cacheId */
+          case 'instance.match': {
+            const [id, reqData, opts] = args;
+            const e = requireEntry(id, 'cache');
+            return serializeResponse(await e.connection.match(deserializeRequest(reqData), opts));
+          }
+          case 'instance.matchAll': {
+            const [id, reqData, opts] = args;
+            const e = requireEntry(id, 'cache');
+            const req = reqData ? deserializeRequest(reqData) : undefined;
+            const arr = await e.connection.matchAll(req, opts);
+            return Promise.all(arr.map(serializeResponse));
+          }
+          case 'instance.add': {
+            const [id, reqData] = args;
+            const e = requireEntry(id, 'cache');
+            await e.connection.add(deserializeRequest(reqData));
+            return null;
+          }
+          case 'instance.addAll': {
+            const [id, reqs] = args;
+            const e = requireEntry(id, 'cache');
+            await e.connection.addAll(reqs.map(deserializeRequest));
+            return null;
+          }
+          case 'instance.put': {
+            const [id, reqData, resData] = args;
+            const e = requireEntry(id, 'cache');
+            const body = resData.body ? new Uint8Array(resData.body) : undefined;
+            const res = new Response(body, {
+              status: resData.status,
+              statusText: resData.statusText,
+              headers: resData.headers
+            });
+            await e.connection.put(deserializeRequest(reqData), res);
+            return null;
+          }
+          case 'instance.delete': {
+            const [id, reqData, opts] = args;
+            const e = requireEntry(id, 'cache');
+            return e.connection.delete(deserializeRequest(reqData), opts);
+          }
+          case 'instance.keys': {
+            const [id, reqData, opts] = args;
+            const e = requireEntry(id, 'cache');
+            const req = reqData ? deserializeRequest(reqData) : undefined;
+            const keys = await e.connection.keys(req, opts);
+            return keys.map(function(r) {
+              return r.url;
+            });
+          }
 
-          ws.addEventListener('error', function () {
-            if (!opened) {
-              reject(new Error('WebSocket connection failed'));
-              return;
-            }
-            var e = registry.get(wsId);
-            if (e) notifyClient(e, wsId, 'websocket', 'error', { message: 'WebSocket error' });
-          });
+          default:
+            throw new Error('Unknown cache method: ' + method);
+        }
+      }
 
-          ws.addEventListener('message', function (evt) {
-            var e = registry.get(wsId);
-            if (!e) return;
-            var data     = evt.data;
-            var isBinary = false;
-            if (data instanceof ArrayBuffer) {
-              data     = Array.from(new Uint8Array(data));
-              isBinary = true;
-            }
-            notifyClient(e, wsId, 'websocket', 'message', { data: data, isBinary: isBinary });
-          });
+      /* ── WebSocket ────────────────────────────────────────────────── */
+      function handleWebSocket(method, args, source, origin) {
+        switch (method) {
+          case 'connect': {
+            const [url, protocols] = args;
+            const wsId = uid('ws');
+            return new Promise(function(resolve, reject) {
+              var opened = false;
+              var ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
+              ws.binaryType = 'arraybuffer';
 
-          ws.addEventListener('close', function (evt) {
-            var e = registry.get(wsId);
-            if (e) {
-              notifyClient(e, wsId, 'websocket', 'close', {
-                code: evt.code, reason: evt.reason, wasClean: evt.wasClean
+              ws.addEventListener('open', function() {
+                opened = true;
+                registry.set(wsId, {
+                  type: 'websocket',
+                  connection: ws,
+                  source: source,
+                  origin: origin
+                });
+                resolve({
+                  wsId: wsId
+                });
+                // 'open' event is implied by connect() resolving; no separate notification needed
               });
-              registry.delete(wsId);
-            }
-            // If not yet registered (connection failed path) nothing to clean up
+
+              ws.addEventListener('error', function() {
+                if (!opened) {
+                  reject(new Error('WebSocket connection failed'));
+                  return;
+                }
+                var e = registry.get(wsId);
+                if (e) notifyClient(e, wsId, 'websocket', 'error', {
+                  message: 'WebSocket error'
+                });
+              });
+
+              ws.addEventListener('message', function(evt) {
+                var e = registry.get(wsId);
+                if (!e) return;
+                var data = evt.data;
+                var isBinary = false;
+                if (data instanceof ArrayBuffer) {
+                  data = Array.from(new Uint8Array(data));
+                  isBinary = true;
+                }
+                notifyClient(e, wsId, 'websocket', 'message', {
+                  data: data,
+                  isBinary: isBinary
+                });
+              });
+
+              ws.addEventListener('close', function(evt) {
+                var e = registry.get(wsId);
+                if (e) {
+                  notifyClient(e, wsId, 'websocket', 'close', {
+                    code: evt.code,
+                    reason: evt.reason,
+                    wasClean: evt.wasClean
+                  });
+                  registry.delete(wsId);
+                }
+                // If not yet registered (connection failed path) nothing to clean up
+              });
+            });
+          }
+
+          case 'send': {
+            const [wsId, data, isBinary] = args;
+            const e = requireEntry(wsId, 'websocket');
+            e.connection.send(isBinary ? new Uint8Array(data) : data);
+            return null;
+          }
+
+          case 'close': {
+            const [wsId, code, reason] = args;
+            const e = requireEntry(wsId, 'websocket');
+            e.connection.close(code, reason);
+            return null;
+          }
+
+          default:
+            throw new Error('Unknown WebSocket method: ' + method);
+        }
+      }
+
+      /* ── SharedWorker ─────────────────────────────────────────────── */
+      function handleSharedWorker(method, args, source, origin) {
+        switch (method) {
+          case 'connect': {
+            const [url, name] = args;
+            const workerId = uid('worker');
+            const worker = name ? new SharedWorker(url, name) : new SharedWorker(url);
+            worker.port.start();
+            registry.set(workerId, {
+              type: 'sharedWorker',
+              connection: worker,
+              port: worker.port,
+              source: source,
+              origin: origin
+            });
+            worker.port.addEventListener('message', function(evt) {
+              var e = registry.get(workerId);
+              if (e) notifyClient(e, workerId, 'sharedWorker', 'message', {
+                data: evt.data
+              });
+            });
+            worker.addEventListener('error', function(err) {
+              var e = registry.get(workerId);
+              if (e) notifyClient(e, workerId, 'sharedWorker', 'error', {
+                message: err.message
+              });
+            });
+            return Promise.resolve({
+              workerId: workerId
+            });
+          }
+
+          case 'postMessage': {
+            const [workerId, data] = args;
+            const e = requireEntry(workerId, 'sharedWorker');
+            e.port.postMessage(data);
+            return null;
+          }
+
+          case 'disconnect': {
+            const [workerId] = args;
+            const e = requireEntry(workerId, 'sharedWorker');
+            e.port.close();
+            registry.delete(workerId);
+            return null;
+          }
+
+          default:
+            throw new Error('Unknown SharedWorker method: ' + method);
+        }
+      }
+
+      /* ── BroadcastChannel ─────────────────────────────────────────── */
+      function handleBroadcastChannel(method, args, source, origin) {
+        switch (method) {
+          case 'subscribe': {
+            const [name] = args;
+            const channelId = uid('bc');
+            const channel = new BroadcastChannel(name);
+            registry.set(channelId, {
+              type: 'broadcastChannel',
+              connection: channel,
+              source: source,
+              origin: origin
+            });
+            channel.addEventListener('message', function(evt) {
+              var e = registry.get(channelId);
+              if (e) notifyClient(e, channelId, 'broadcastChannel', 'message', evt.data);
+            });
+            channel.addEventListener('messageerror', function() {
+              var e = registry.get(channelId);
+              if (e) notifyClient(e, channelId, 'broadcastChannel', 'messageerror', {});
+            });
+            return Promise.resolve({
+              channelId: channelId
+            });
+          }
+
+          case 'postMessage': {
+            const [channelId, data] = args;
+            const e = requireEntry(channelId, 'broadcastChannel');
+            e.connection.postMessage(data);
+            return null;
+          }
+
+          case 'close': {
+            const [channelId] = args;
+            const e = requireEntry(channelId, 'broadcastChannel');
+            e.connection.close();
+            registry.delete(channelId);
+            return null;
+          }
+
+          default:
+            throw new Error('Unknown BroadcastChannel method: ' + method);
+        }
+      }
+
+      /* ── registry helper ──────────────────────────────────────────── */
+      function requireEntry(id, type) {
+        const e = registry.get(id);
+        if (!e || e.type !== type) throw new Error(type + ' not found: ' + id);
+        return e;
+      }
+
+      /* ══════════════════════════════════════════════════════════════ */
+      /*  MAIN DISPATCHER                                               */
+      /* ══════════════════════════════════════════════════════════════ */
+      window.addEventListener('message', async function(event) {
+        const msg = event.data;
+        // Ignore anything that isn't our protocol or is an event we emitted
+        if (!msg || msg.__ss !== true || msg.__event || msg.__ready) return;
+
+        const {
+          id,
+          service,
+          method,
+          args
+        } = msg;
+        const source = event.source;
+        const origin = event.origin;
+
+        // Require all fields
+        if (!id || !service || !method || !Array.isArray(args)) return;
+
+        try {
+          let result = null;
+
+          if (service === 'localStorage') {
+            result = handleStorage(localStorage, method, args);
+          } else if (service === 'sessionStorage') {
+            result = handleStorage(sessionStorage, method, args);
+          } else if (service === 'fetch') {
+            result = await handleFetch(args);
+          } else if (service === 'xhr') {
+            result = await handleXHR(args);
+          } else if (service === 'cache') {
+            result = await handleCache(method, args);
+          } else if (service === 'websocket') {
+            result = await handleWebSocket(method, args, source, origin);
+          } else if (service === 'sharedWorker') {
+            result = await handleSharedWorker(method, args, source, origin);
+          } else if (service === 'broadcastChannel') {
+            result = await handleBroadcastChannel(method, args, source, origin);
+          } else throw new Error('Unknown service: "' + service + '"');
+
+          replyTo(source, origin, id, result, null);
+        } catch (err) {
+          replyTo(source, origin, id, null, {
+            name: err.name,
+            message: err.message
           });
-        });
+        }
+      });
+
+      /* ── ready signal ─────────────────────────────────────────────── */
+      function signalReady() {
+        if (globalThis.parent !== globalThis) {
+          globalThis.parent.postMessage({
+            __ss: true,
+            __ready: true
+          }, '*');
+        }
       }
-
-      case 'send': {
-        const [wsId, data, isBinary] = args;
-        const e = requireEntry(wsId, 'websocket');
-        e.connection.send(isBinary ? new Uint8Array(data) : data);
-        return null;
+      if (document.readyState === 'complete') {
+        signalReady();
+      } else {
+        globalThis.addEventListener('load', signalReady);
       }
+    })();
 
-      case 'close': {
-        const [wsId, code, reason] = args;
-        const e = requireEntry(wsId, 'websocket');
-        e.connection.close(code, reason);
-        return null;
-      }
-
-      default: throw new Error('Unknown WebSocket method: ' + method);
-    }
-  }
-
-  /* ── SharedWorker ─────────────────────────────────────────────── */
-  function handleSharedWorker(method, args, source, origin) {
-    switch (method) {
-      case 'connect': {
-        const [url, name] = args;
-        const workerId = uid('worker');
-        const worker   = name ? new SharedWorker(url, name) : new SharedWorker(url);
-        worker.port.start();
-        registry.set(workerId, {
-          type: 'sharedWorker', connection: worker, port: worker.port,
-          source: source, origin: origin
-        });
-        worker.port.addEventListener('message', function (evt) {
-          var e = registry.get(workerId);
-          if (e) notifyClient(e, workerId, 'sharedWorker', 'message', { data: evt.data });
-        });
-        worker.addEventListener('error', function (err) {
-          var e = registry.get(workerId);
-          if (e) notifyClient(e, workerId, 'sharedWorker', 'error', { message: err.message });
-        });
-        return Promise.resolve({ workerId: workerId });
-      }
-
-      case 'postMessage': {
-        const [workerId, data] = args;
-        const e = requireEntry(workerId, 'sharedWorker');
-        e.port.postMessage(data);
-        return null;
-      }
-
-      case 'disconnect': {
-        const [workerId] = args;
-        const e = requireEntry(workerId, 'sharedWorker');
-        e.port.close();
-        registry.delete(workerId);
-        return null;
-      }
-
-      default: throw new Error('Unknown SharedWorker method: ' + method);
-    }
-  }
-
-  /* ── BroadcastChannel ─────────────────────────────────────────── */
-  function handleBroadcastChannel(method, args, source, origin) {
-    switch (method) {
-      case 'subscribe': {
-        const [name]      = args;
-        const channelId   = uid('bc');
-        const channel     = new BroadcastChannel(name);
-        registry.set(channelId, {
-          type: 'broadcastChannel', connection: channel,
-          source: source, origin: origin
-        });
-        channel.addEventListener('message', function (evt) {
-          var e = registry.get(channelId);
-          if (e) notifyClient(e, channelId, 'broadcastChannel', 'message', evt.data);
-        });
-        channel.addEventListener('messageerror', function () {
-          var e = registry.get(channelId);
-          if (e) notifyClient(e, channelId, 'broadcastChannel', 'messageerror', {});
-        });
-        return Promise.resolve({ channelId: channelId });
-      }
-
-      case 'postMessage': {
-        const [channelId, data] = args;
-        const e = requireEntry(channelId, 'broadcastChannel');
-        e.connection.postMessage(data);
-        return null;
-      }
-
-      case 'close': {
-        const [channelId] = args;
-        const e = requireEntry(channelId, 'broadcastChannel');
-        e.connection.close();
-        registry.delete(channelId);
-        return null;
-      }
-
-      default: throw new Error('Unknown BroadcastChannel method: ' + method);
-    }
-  }
-
-  /* ── registry helper ──────────────────────────────────────────── */
-  function requireEntry(id, type) {
-    const e = registry.get(id);
-    if (!e || e.type !== type) throw new Error(type + ' not found: ' + id);
-    return e;
-  }
-
-  /* ══════════════════════════════════════════════════════════════ */
-  /*  MAIN DISPATCHER                                               */
-  /* ══════════════════════════════════════════════════════════════ */
-  window.addEventListener('message', async function (event) {
-    const msg = event.data;
-    // Ignore anything that isn't our protocol or is an event we emitted
-    if (!msg || msg.__ss !== true || msg.__event || msg.__ready) return;
-
-    const { id, service, method, args } = msg;
-    const source = event.source;
-    const origin = event.origin;
-
-    // Require all fields
-    if (!id || !service || !method || !Array.isArray(args)) return;
-
-    try {
-      let result = null;
-
-      if      (service === 'localStorage')    { result = handleStorage(localStorage, method, args); }
-      else if (service === 'sessionStorage')  { result = handleStorage(sessionStorage, method, args); }
-      else if (service === 'fetch')           { result = await handleFetch(args); }
-      else if (service === 'xhr')             { result = await handleXHR(args); }
-      else if (service === 'cache')           { result = await handleCache(method, args); }
-      else if (service === 'websocket')       { result = await handleWebSocket(method, args, source, origin); }
-      else if (service === 'sharedWorker')    { result = await handleSharedWorker(method, args, source, origin); }
-      else if (service === 'broadcastChannel'){ result = await handleBroadcastChannel(method, args, source, origin); }
-      else throw new Error('Unknown service: "' + service + '"');
-
-      replyTo(source, origin, id, result, null);
-    } catch (err) {
-      replyTo(source, origin, id, null, { name: err.name, message: err.message });
-    }
-  });
-
-  /* ── ready signal ─────────────────────────────────────────────── */
-  function signalReady() {
-    if (globalThis.parent !== globalThis) {
-      globalThis.parent.postMessage({ __ss: true, __ready: true }, '*');
-    }
-  }
-  if (document.readyState === 'complete') {
-    signalReady();
-  } else {
-    globalThis.addEventListener('load', signalReady);
-  }
-})();
-</script>
+  </script>
 </body>
+
 </html>
