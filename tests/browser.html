@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SharedServices — client.js unit tests</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: system-ui, -apple-system, sans-serif;
       max-width: 900px;
@@ -15,11 +21,25 @@
       color: #1e293b;
       line-height: 1.5;
     }
-    h1 { font-size: 1.25rem; margin: 0 0 2px; }
-    p.subtitle { color: #64748b; font-size: .875rem; margin: 0 0 24px; }
-    #results { margin-top: 4px; }
+
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 2px;
+    }
+
+    p.subtitle {
+      color: #64748b;
+      font-size: .875rem;
+      margin: 0 0 24px;
+    }
+
+    #results {
+      margin-top: 4px;
+    }
+
   </style>
 </head>
+
 <body>
   <h1>SharedServices — client.js unit tests</h1>
   <p class="subtitle">In-browser run via jest-browser-shim.js (no build step required)</p>
@@ -34,6 +54,7 @@
       if (mod === '../client.js') return globalThis.SharedServices;
       throw new Error('Unknown module requested: ' + mod);
     }
+
   </script>
 
   <!--
@@ -61,6 +82,8 @@
   -->
   <script>
     globalThis.__runTests();
+
   </script>
 </body>
+
 </html>
